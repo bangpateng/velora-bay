@@ -1,7 +1,5 @@
 // Cars: procedural low-poly models, arcade driving physics, traffic AI
-// that follows the road network, parked cars to steal, and damage smoke.
-// Police cars here are visual stand-ins for Phase A's chase staging;
-// Phase B wires them to a real pursuit AI.
+// on the road network, parked cars to steal, and damage smoke.
 import * as THREE from 'three';
 import { CAR_TUNING, TRAFFIC_TUNING } from './config.js';
 import { createRng, pick, range, clamp, angleLerp, wrapAngle } from './utils.js';
@@ -201,8 +199,7 @@ function nearestOtherCar(car, cars) {
   return best;
 }
 
-// Traffic AI: follow the loop route, ease into corners, brake for the
-// car ahead, and occasionally pause as if stuck at a light.
+// Traffic AI: follow the loop, brake for the car ahead, pause at lights.
 export function updateTrafficCar(car, dt, cars, colliders) {
   if (!car.route) return;
   const target = car.route[car.routeIndex];
@@ -262,8 +259,7 @@ export function updatePlayerCar(car, dt, input, cars, colliders) {
   car.heading += turnRate * dt * grip * 0.45;
   car.pos.x += Math.sin(car.heading) * car.speed * dt;
   car.pos.z += Math.cos(car.heading) * car.speed * dt;
-  // City edge: Velora Bay ends at the map bounds — bounce the speed
-  // off instead of driving into empty ground.
+  // City edge: bounce speed off instead of driving into empty ground.
   const B = 168;
   if (car.pos.x < -B || car.pos.x > B || car.pos.z < -B || car.pos.z > B) {
     car.pos.x = clamp(car.pos.x, -B, B);
@@ -307,8 +303,7 @@ function spinWheels(car, dt) {
   for (const wheel of wheels) wheel.rotation.x += car.speed * dt * 1.4;
 }
 
-// Damage accumulates from crashes; past 100 the car is wrecked and
-// puffs smoke until Phase B's repair/respawn flow handles it.
+// Damage past 100 wrecks the car; it puffs smoke until repaired.
 export function damageCar(car, amount) {
   car.damage = Math.min(120, car.damage + amount);
   if (car.damage >= 100 && !car.wrecked) {
@@ -318,8 +313,7 @@ export function damageCar(car, amount) {
   return car.wrecked;
 }
 
-// Smoke puff positions for a wrecked car, so main.js can attach a
-// cheap particle sprite without the car knowing about particles.
+// Smoke puff position for a wrecked car.
 export function wreckSmokePosition(car, out) {
   out.set(car.pos.x, 1.6, car.pos.z);
   return out;
@@ -336,8 +330,7 @@ export function findNearestCar(pos, cars, maxDist) {
   return best;
 }
 
-// Despawn traffic that drifted far from the player and respawn it on a
-// fresh loop near the player, so the streets always feel busy.
+// Despawn far traffic and respawn it near the player.
 export function recycleTraffic(traffic, scene, city, playerPos) {
   for (const car of traffic) {
     const d = Math.hypot(car.pos.x - playerPos.x, car.pos.z - playerPos.z);

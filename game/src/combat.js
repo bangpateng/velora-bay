@@ -1,6 +1,5 @@
-// Combat: a pistol with mouse aim, tracers and muzzle flash, a punch,
-// ammo and first-aid pickups, and the Kings — the rival gang that shoots
-// back, drops cash, and anchors the M3 mission.
+// Combat: pistol with mouse aim, tracers, punch, pickups, and the Kings
+// — the rival gang that shoots back, drops cash, and anchors missions.
 import * as THREE from 'three';
 import { createRng, pick, range, clamp, angleLerp } from './utils.js';
 import { damageCar } from './vehicles.js';
@@ -67,8 +66,7 @@ function buildGangModel() {
   return group;
 }
 
-// Ray-sphere test: does the shot ray pass within `radius` of `center`
-// before `maxDist`? Returns the distance along the ray, or Infinity.
+// Ray-sphere test: distance along the ray, or Infinity.
 function rayHit(origin, dir, center, radius, maxDist) {
   const ox = center.x - origin.x;
   const oy = center.y - origin.y;
@@ -200,7 +198,9 @@ export function createCombatSystem(scene, hooks) {
   };
 
   // --- The Kings ----------------------------------------------------------
-  sys.spawnGang = (x, z, count = 4) => {
+  // spawnGang(x, z, count, boss): when boss is true the first member is
+  // Big Sal, the Kings' boss — 300 health and a gold band, for the finale.
+  sys.spawnGang = (x, z, count = 4, boss = false) => {
     const rng = createRng((Math.random() * 1e9) | 0);
     const members = [];
     for (let i = 0; i < count; i += 1) {
@@ -208,17 +208,23 @@ export function createCombatSystem(scene, hooks) {
       const model = buildGangModel();
       model.position.set(x + Math.sin(a) * 8, 0, z + Math.cos(a) * 8);
       scene.add(model);
+      const isBoss = boss && i === 0;
       const member = {
         model,
         pos: model.position,
         heading: a,
-        health: 100,
-        maxHealth: 100,
+        health: isBoss ? 300 : 100,
+        maxHealth: isBoss ? 300 : 100,
         shootTimer: 1 + rng() * 1.5,
         walkPhase: rng() * 6,
         alive: true,
-        kind: 'gang',
+        kind: isBoss ? 'boss' : 'gang',
       };
+      if (isBoss) {
+        // Gold band and a bigger frame so Big Sal reads as the boss.
+        model.children[2].material = new THREE.MeshStandardMaterial({ color: 0xffd23f, roughness: 0.5, metalness: 0.4 });
+        model.scale.setScalar(1.25);
+      }
       sys.gang.push(member);
       members.push(member);
     }
@@ -239,7 +245,6 @@ export function createCombatSystem(scene, hooks) {
     const drop = 25 + Math.floor(Math.random() * 36);
     if (hooks.addCash) hooks.addCash(drop);
     if (hooks.onGangKill) hooks.onGangKill(member, drop);
-    // The body fades out after a few seconds so the plaza clears.
     setTimeout(() => {
       scene.remove(member.model);
       const i = sys.gang.indexOf(member);
@@ -247,10 +252,7 @@ export function createCombatSystem(scene, hooks) {
     }, 6000);
   }
 
-  // --- Shooting -----------------------------------------------------------
-  // origin/dir come from the camera. Targets are resolved by ray-sphere
-  // tests against gang members, pedestrians, cars and police cars.
-  // Returns { hit: 'gang'|'ped'|'car'|'police'|null, point }.
+  // --- Shooting: ray-sphere tests vs gang, peds, cars and police. ---
   sys.shoot = (origin, dir, ctx) => {
     const maxDist = 70;
     let bestT = maxDist;
@@ -357,7 +359,7 @@ export function createCombatSystem(scene, hooks) {
         m.model.userData.legL.rotation.x = swing;
         m.model.userData.legR.rotation.x = -swing;
       }
-      // Kings shoot back with poor accuracy: ~1 shot per 2 s, 12% hit.
+      // Kings shoot back: ~1 shot per 2 s, 12% hit.
       m.shootTimer -= dt;
       if (m.shootTimer <= 0 && dist < 38 && !playerInCar) {
         m.shootTimer = 1.4 + Math.random() * 1.4;
@@ -376,7 +378,6 @@ export function createCombatSystem(scene, hooks) {
           p.model.visible = true;
         }
       } else {
-        // Gentle bob so pickups read as collectables.
         p.model.position.y = 0.55 + Math.sin(ctx.time * 2 + p.pos.x) * 0.12;
         p.model.rotation.y += dt * 0.8;
       }

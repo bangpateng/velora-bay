@@ -1,6 +1,5 @@
-// Small shared helpers: a seeded RNG so the city, traffic and staging
-// are reproducible, math helpers, and canvas-generated textures so the
-// game needs no image files at all.
+// Shared helpers: a seeded RNG, math helpers, and canvas textures so
+// the game needs no image files at all.
 import * as THREE from 'three';
 
 // mulberry32 — tiny, fast, deterministic for a given seed.
@@ -86,14 +85,14 @@ export function makeBuildingTexture(rng, baseColor, floors = 8, cols = 5) {
 // Asphalt with a dashed centre line, tiled along a road segment.
 export function makeRoadTexture() {
   return canvasTexture(128, 128, (ctx, w, h) => {
-    ctx.fillStyle = '#2e2f33';
+    ctx.fillStyle = '#4a4a55';
     ctx.fillRect(0, 0, w, h);
     // Speckle for asphalt grain.
     for (let i = 0; i < 260; i += 1) {
       ctx.fillStyle = `rgba(255,255,255,${0.02 + Math.random() * 0.04})`;
       ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
     }
-    ctx.fillStyle = '#e8e4c8';
+    ctx.fillStyle = '#fff2b0';
     ctx.fillRect(w / 2 - 2, 8, 4, 44);
     ctx.fillRect(w / 2 - 2, 72, 4, 44);
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
@@ -105,7 +104,7 @@ export function makeRoadTexture() {
 // Crosswalk stripes, laid across a road at an intersection.
 export function makeCrosswalkTexture() {
   return canvasTexture(128, 64, (ctx, w, h) => {
-    ctx.fillStyle = '#2e2f33';
+    ctx.fillStyle = '#4a4a55';
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     for (let x = 6; x < w; x += 18) ctx.fillRect(x, 6, 9, h - 12);
@@ -115,7 +114,7 @@ export function makeCrosswalkTexture() {
 // Plain sidewalk slab with a faint grid of paving joints.
 export function makeSidewalkTexture() {
   return canvasTexture(128, 128, (ctx, w, h) => {
-    ctx.fillStyle = '#b9b3a4';
+    ctx.fillStyle = '#d8cdb8';
     ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = 'rgba(0,0,0,0.14)';
     ctx.lineWidth = 2;

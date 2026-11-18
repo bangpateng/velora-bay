@@ -1,6 +1,5 @@
 // Rico Vale on foot: a third-person walker built from boxes, moving
 // relative to the camera, with sprint, jump, and entering/exiting cars.
-// Phase B adds combat and the busted/wasted flow on top of this state.
 import * as THREE from 'three';
 import { PLAYER_TUNING } from './config.js';
 import { clamp } from './utils.js';
@@ -61,8 +60,7 @@ export function createPlayer(scene, spawn) {
   };
 }
 
-// Circle-vs-AABB push-out against building colliders. Shared by the
-// player and (via vehicles.js) by cars, so nobody clips through a tower.
+// Circle-vs-AABB push-out vs building colliders, shared by cars.
 export function resolveBuildingCollision(pos, radius, colliders) {
   for (const c of colliders) {
     const nx = clamp(pos.x, c.minX, c.maxX);

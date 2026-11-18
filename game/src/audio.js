@@ -1,6 +1,5 @@
-// All sound is synthesized with WebAudio — no audio files, no network.
-// Every entry point guards a blocked or missing AudioContext so the game
-// never crashes on a browser that refuses autoplay.
+// All sound is synthesized with WebAudio — no audio files. Every entry
+// guards a blocked AudioContext so the game never crashes on autoplay.
 let ctx = null;
 let master = null;
 let engineOsc = null;
@@ -24,8 +23,7 @@ function ensureContext() {
   return ctx;
 }
 
-// Call from the first user gesture (New Game click, any key). Safe to
-// call repeatedly; resumes a suspended context.
+// Call from the first user gesture. Safe to call repeatedly.
 export function initAudio() {
   const audio = ensureContext();
   if (audio && audio.state === 'suspended') audio.resume().catch(() => {});
@@ -145,7 +143,6 @@ export function playBump() {
 }
 
 // Continuous engine hum: call every frame with speed 0..1 while driving.
-// Creates the oscillator lazily and keeps it running at idle volume.
 export function setEngine(speed01, running) {
   if (!running) {
     if (engineGain) engineGain.gain.value = 0;
@@ -170,41 +167,69 @@ export function setEngine(speed01, running) {
   } catch (err) { /* cosmetic */ }
 }
 
-// A lazy sunset chord pad: Am7 — Fmaj7 — Cmaj7 — G, one chord per bar.
-const MUSIC_CHORDS = [
-  [110.0, 130.81, 164.81, 196.0],
-  [87.31, 130.81, 164.81, 220.0],
-  [130.81, 164.81, 196.0, 246.94],
-  [98.0, 146.83, 196.0, 246.94],
+// Car radio: three stations, Q switches between them. Each station is a
+// chord loop with its own tempo; the HUD shows the station name.
+const RADIO = [
+  { name: 'VELORA FM', bar: 4400, chords: [
+    [110.0, 130.81, 164.81, 196.0], [87.31, 130.81, 164.81, 220.0],
+    [130.81, 164.81, 196.0, 246.94], [98.0, 146.83, 196.0, 246.94],
+  ] },
+  { name: 'BAY 87.5', bar: 3000, chords: [
+    [130.81, 164.81, 196.0, 261.63], [98.0, 146.83, 196.0, 246.94],
+    [110.0, 164.81, 220.0, 261.63], [87.31, 130.81, 174.61, 220.0],
+  ] },
+  { name: 'OCEAN DRIVE', bar: 5200, chords: [
+    [146.83, 174.61, 220.0, 261.63], [98.0, 146.83, 196.0, 293.66],
+    [130.81, 164.81, 196.0, 246.94], [110.0, 146.83, 174.61, 220.0],
+  ] },
 ];
+let radioStation = 0;
+let chordIndex = 0;
+
+function playChord() {
+  if (!ctx) return;
+  stopChord();
+  const station = RADIO[radioStation];
+  const chord = station.chords[chordIndex % station.chords.length];
+  chordIndex += 1;
+  for (const freq of chord) {
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.035, ctx.currentTime + 1.2);
+      gain.gain.setValueAtTime(0.035, ctx.currentTime + 3.2);
+      gain.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 4.4);
+      osc.connect(gain).connect(master);
+      osc.start();
+      osc.stop(ctx.currentTime + 4.5);
+      musicNodes.push(osc);
+    } catch (err) { /* cosmetic */ }
+  }
+}
 
 export function startMusic() {
   if (!ensureContext() || musicTimer) return;
-  let chordIndex = 0;
-  const playChord = () => {
-    if (!ctx) return;
-    stopChord();
-    const chord = MUSIC_CHORDS[chordIndex % MUSIC_CHORDS.length];
-    chordIndex += 1;
-    for (const freq of chord) {
-      try {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.035, ctx.currentTime + 1.2);
-        gain.gain.setValueAtTime(0.035, ctx.currentTime + 3.2);
-        gain.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 4.4);
-        osc.connect(gain).connect(master);
-        osc.start();
-        osc.stop(ctx.currentTime + 4.5);
-        musicNodes.push(osc);
-      } catch (err) { /* cosmetic */ }
-    }
-  };
   playChord();
-  musicTimer = setInterval(playChord, 4400);
+  musicTimer = setInterval(playChord, RADIO[radioStation].bar);
+}
+
+export function setRadioStation(i) {
+  radioStation = ((i % RADIO.length) + RADIO.length) % RADIO.length;
+  chordIndex = 0;
+  if (musicTimer) {
+    clearInterval(musicTimer);
+    stopChord();
+    playChord();
+    musicTimer = setInterval(playChord, RADIO[radioStation].bar);
+  }
+  return RADIO[radioStation].name;
+}
+
+export function radioName() {
+  return RADIO[radioStation].name;
 }
 
 function stopChord() {
@@ -218,4 +243,34 @@ export function stopMusic() {
   if (musicTimer) clearInterval(musicTimer);
   musicTimer = null;
   stopChord();
+}
+
+// Helicopter rotor: a low sawtooth thump, amplitude-modulated at ~11 Hz
+// for the whomp-whomp, while the police heli is overhead.
+let rotorNodes = null;
+export function startRotorLoop() {
+  if (rotorNodes || !ensureContext()) return;
+  try {
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 32;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.05;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 11;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 0.035;
+    lfo.connect(lfoGain).connect(gain.gain);
+    osc.connect(gain).connect(master);
+    osc.start();
+    lfo.start();
+    rotorNodes = { osc, lfo };
+  } catch (err) { /* cosmetic */ }
+}
+
+export function stopRotorLoop() {
+  if (!rotorNodes) return;
+  try { rotorNodes.osc.stop(); rotorNodes.lfo.stop(); } catch (err) { /* already stopped */ }
+  rotorNodes = null;
 }

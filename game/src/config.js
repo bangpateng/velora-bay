@@ -1,6 +1,4 @@
-// Velora Bay tuning: every magic number the game balances on lives here,
-// so later phases tune the feel in one place instead of hunting through
-// the physics and the city builder.
+// Velora Bay tuning: every magic number the game balances on lives here.
 
 export const CITY = {
   // Distance between neighbouring road centrelines (one block + one road).
@@ -70,6 +68,9 @@ export const KEYS = {
   reload: 'KeyR',
   punch: 'KeyF',
   missions: 'KeyM',
+  radio: 'KeyQ',
+  buyAmmo: 'KeyB',
+  buySmg: 'KeyN',
   // Mouse: click to shoot (when the pointer is locked).
 };
 
@@ -96,24 +97,45 @@ export const COMBAT_TUNING = {
 };
 
 export const COLORS = {
-  sky: 0x87bfe8,
-  fog: 0x9fc8e8,
-  sun: 0xfff2d0,
-  ground: 0x8a8f7a,
-  sidewalk: 0xb9b3a4,
-  road: 0x2e2f33,
-  roadLine: 0xe8e4c8,
-  ocean: 0x1f7fae,
-  beach: 0xe6d3a3,
-  parkGrass: 0x5da24a,
-  buildingPalette: [0x9aa3ad, 0xc2a878, 0x8f9bb0, 0xb98d7a, 0x7d8b9c, 0xd0c0a0],
-  downtownPalette: [0x5f7086, 0x7a8ba0, 0x4e5f78, 0x93a7bd],
-  palmTrunk: 0x7a5a38,
-  palmLeaf: 0x3f9e4d,
+  // Sun-soaked Miami: warm pastels, turquoise water, pale sand.
+  sky: 0x6fc3f7,
+  fog: 0xa8d8f5,
+  sun: 0xfff6d8,
+  ground: 0xa8a488,
+  sidewalk: 0xd8cdb8,
+  road: 0x4a4a55,
+  roadLine: 0xfff2b0,
+  ocean: 0x1fb3c9,
+  beach: 0xf2e0b5,
+  parkGrass: 0x6fbf5a,
+  buildingPalette: [0xffd9c2, 0xffc2d1, 0xffe9a8, 0xa8e6cf, 0x9fc5e8, 0xffb3ba],
+  downtownPalette: [0x8fb8d8, 0xa8c8e8, 0x7fb3d8, 0xc8d8f0],
+  palmTrunk: 0x8a6a44,
+  palmLeaf: 0x4cb85a,
   lampPole: 0x3a3f45,
   hudAccent: '#ffd23f',
 };
 
-// Wanted stars shown on the HUD; Phase B wires the police AI that
-// raises and lowers this level. Phase A only stages it for screenshots.
+// Six named districts, drawn on the minimap and shown on the HUD so the
+// player always knows which part of Velora Bay they are in.
+export const DISTRICTS = [
+  { name: 'Beachfront', x0: -230, z0: -190, x1: -140, z1: 190 },
+  { name: 'The Docks', x0: -140, z0: -190, x1: -58, z1: 58 },
+  { name: 'Uptown', x0: -58, z0: -190, x1: 180, z1: -58 },
+  { name: 'Downtown', x0: -58, z0: -58, x1: 58, z1: 58 },
+  { name: 'Southside', x0: -140, z0: 58, x1: 58, z1: 190 },
+  { name: 'Parkside', x0: 58, z0: -58, x1: 180, z1: 190 },
+];
+
+export function districtAt(x, z) {
+  for (const d of DISTRICTS) if (x >= d.x0 && x < d.x1 && z >= d.z0 && z < d.z1) return d.name;
+  return 'Velora Bay';
+}
+
+// VELORA ARMS weapon kiosk on the beachfront promenade; Mama Lou's
+// garage at the pier is the safehouse: heal, cool off, store the gold car.
+export const WEAPON_SHOP = { x: -162, z: 58, r: 8, ammoPrice: 50, smgPrice: 500 };
+export const SAFEHOUSE = { x: -148, z: 0, r: 13 };
+
+// Wanted stars shown on the HUD (0-5).
 export const WANTED_MAX = 5;

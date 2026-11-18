@@ -1,6 +1,5 @@
-// Save / load through localStorage, guarded so a browser that blocks
-// storage (private mode, file:// quirks) just plays without saving.
-// Phase B wires the save into mission progress and the pause menu.
+// Save / load through localStorage, guarded so a blocked browser just
+// plays without saving.
 export const SAVE_KEY = 'velora-bay-save-v1';
 
 export function saveGame(state) {
@@ -18,6 +17,7 @@ export function saveGame(state) {
       clockMinutes: state.clockMinutes,
       missionsCompleted: state.missionsCompleted || [],
       currentMission: state.currentMission ?? 0,
+      goldStored: state.goldStored ?? false,
       stats: state.stats || {},
       player: {
         x: state.playerX,

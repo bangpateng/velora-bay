@@ -1,10 +1,7 @@
-// Velora Bay — boot, game loop and state machine.
-// Wires the city, the player, the cars, the HUD, the audio and the save
-// together; each system owns its own file, this one only connects them.
-// Phase B adds pedestrians, police/wanted, combat, missions, and the
-// busted/wasted flows on top of the Phase A core.
+// Velora Bay — boot, game loop and state machine. Each system owns its
+// own file; this one wires the city, player, cars, HUD, audio and save.
 import * as THREE from 'three';
-import { CITY, COLORS, KEYS, PLAYER_TUNING, COMBAT_TUNING } from './config.js';
+import { CITY, COLORS, KEYS, PLAYER_TUNING, COMBAT_TUNING, districtAt, WEAPON_SHOP, SAFEHOUSE } from './config.js';
 import { clamp, angleLerp } from './utils.js';
 import { buildCity } from './city.js';
 import { createPlayer, updatePlayerOnFoot, damagePlayer, healPlayer } from './player.js';
@@ -17,6 +14,7 @@ import {
   initAudio, setEngine, playClick, playCash, playHorn, playJump,
   playSiren, startSirenLoop, stopSirenLoop, playShot, playPunch,
   playPickup, playReload, playMission, playBusted, playBump, startMusic,
+  setRadioStation, radioName, startRotorLoop, stopRotorLoop,
 } from './audio.js';
 import { saveGame, loadGame, hasSave } from './save.js';
 import { createPedestrians, updatePedestrians, knockPedDown, nearestPed } from './pedestrians.js';
@@ -44,12 +42,12 @@ function createRenderer() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.15;
   return renderer;
 }
 
 function createLights(scene) {
-  const sun = new THREE.DirectionalLight(COLORS.sun, 2.6);
+  const sun = new THREE.DirectionalLight(COLORS.sun, 2.9);
   sun.position.set(140, 190, 70);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -85,7 +83,7 @@ export function bootGame() {
   scene.background = new THREE.Color(COLORS.sky);
   scene.fog = new THREE.Fog(COLORS.fog, 180, 520);
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 900);
-  createLights(scene);
+  const lights = createLights(scene);
   const city = buildCity(scene);
 
   const player = createPlayer(scene, city.spawnPoint);
@@ -99,6 +97,7 @@ export function bootGame() {
 
   const state = {
     screen: 'menu', // menu | playing | paused
+    menuFocus: '', // '' = orbit downtown; 'beach' = cover shot framing
     money: 250,
     health: PLAYER_TUNING.maxHealth,
     wanted: 0,
@@ -125,6 +124,14 @@ export function bootGame() {
     missionMarker: city.missionMarker,
     missionsCompleted: [],
     currentMission: 0,
+    radio: 0,
+    radioName: 'VELORA FM',
+    weapon: 'pistol', // pistol | smg (bought at VELORA ARMS)
+    goldStored: false,
+    district: 'Beachfront',
+    nearShop: false,
+    inSafehouse: false,
+    safeTimer: 0,
     stats: { carsStolen: 0, distanceDriven: 0, crashes: 0, missionsDone: 0, timesBusted: 0, timesWasted: 0, kingsDefeated: 0, pedsHit: 0 },
     time: 0,
     gunshotPos: null,
@@ -139,8 +146,7 @@ export function bootGame() {
   const keysDown = new Set();
 
   // --- Crime, damage, busted / wasted -------------------------------------
-  // Crimes stack, but a 1.5 s cooldown stops one crash or burst from
-  // counting five times in a single frame.
+  // A 1.5 s cooldown stops one crash or burst from counting five times.
   function addCrime(level, reason) {
     if (state.time - state.lastCrimeAt < 1.5) return;
     state.lastCrimeAt = state.time;
@@ -210,7 +216,6 @@ export function bootGame() {
     saveGame(state);
   }
 
-  // Death placeholder replaced: losing all health now means WASTED.
   function respawnPlayer() {
     player.health = PLAYER_TUNING.maxHealth;
     state.health = player.health;
@@ -238,6 +243,8 @@ export function bootGame() {
       showMissionCard("LOU'S PAINT SHOP", 'Fresh paint, clean slate. The cops have lost you.', 'complete');
       return true;
     },
+    startRotor: () => startRotorLoop(),
+    stopRotor: () => stopRotorLoop(),
   });
   state.police = policeSys.cars;
 
@@ -287,7 +294,7 @@ export function bootGame() {
     onMissionComplete: () => { saveGame(state); },
     onMissionFail: () => { saveGame(state); },
     onStoryComplete: () => {
-      showMissionCard('KING OF VELORA BAY', 'Five jobs. One city. Rico Vale runs Velora Bay now.', 'complete');
+      showMissionCard('KING OF VELORA BAY', 'Eight jobs. One city. Rico Vale runs Velora Bay now.', 'complete');
       playMission();
     },
     showCard: (title, body, kind) => showMissionCard(title, body, kind),
@@ -364,17 +371,16 @@ export function bootGame() {
   // --- Combat actions -------------------------------------------------------
   function shootPistol() {
     if (player.inCar || state.screen !== 'playing') return;
-    if (state.ammo <= 0) {
+    const burst = state.weapon === 'smg' ? 3 : 1;
+    if (state.ammo < burst) {
       playClick();
       return;
     }
-    state.ammo -= 1;
+    state.ammo -= burst;
     playShot();
     const origin = { x: player.pos.x, y: player.pos.y + 1.6, z: player.pos.z };
-    // Aim where the camera faces, but levelled to chest height: the
-    // chase camera looks down at the player, so its raw forward ray
-    // would dive into the ground a few metres out. Aiming at a point
-    // 30 m ahead at chest height keeps shots true to the crosshair.
+    // Aim at chest height 30 m ahead: the chase camera looks down, so
+    // its raw forward ray would dive into the ground.
     const fwd = new THREE.Vector3();
     camera.getWorldDirection(fwd);
     const flat = Math.hypot(fwd.x, fwd.z) || 1;
@@ -389,10 +395,14 @@ export function bootGame() {
       y: (aim.y - origin.y) / dl,
       z: (aim.z - origin.z) / dl,
     };
-    combat.shoot(origin, dir, {
-      peds,
-      cars: allCars(),
-    });
+    for (let s = 0; s < burst; s += 1) {
+      const spread = burst > 1 ? (s - 1) * 0.03 : 0;
+      const c = Math.cos(spread);
+      const sn = Math.sin(spread);
+      combat.shoot(origin, {
+        x: dir.x * c - dir.z * sn, y: dir.y, z: dir.x * sn + dir.z * c,
+      }, { peds, cars: allCars() });
+    }
   }
 
   function punch() {
@@ -412,6 +422,32 @@ export function bootGame() {
     playReload();
   }
 
+  // --- VELORA ARMS: buy ammo or an SMG with mission cash --------------
+  function buy(price, give, name, okMsg) {
+    if (!state.nearShop || state.screen !== 'playing') return;
+    if (state.money < price) {
+      showMissionCard('VELORA ARMS', `${name} costs $${price} — you only have $${state.money}.`, 'fail');
+      return;
+    }
+    state.money -= price;
+    give();
+    playCash();
+    showMissionCard('VELORA ARMS', okMsg, 'info');
+  }
+  function buyAmmo() {
+    buy(WEAPON_SHOP.ammoPrice, () => { state.ammoReserve += 24; }, 'Ammo', `+24 reserve ammo for $${WEAPON_SHOP.ammoPrice}. Press R to reload.`);
+  }
+  function buySmg() {
+    if (state.weapon === 'smg') { showMissionCard('VELORA ARMS', 'You already own the SMG.', 'info'); return; }
+    buy(WEAPON_SHOP.smgPrice, () => { state.weapon = 'smg'; }, 'The SMG', 'SMG bought — three-round bursts.');
+  }
+
+  function cycleRadio() {
+    if (state.screen !== 'playing') return;
+    state.radio = (state.radio + 1) % 3;
+    state.radioName = setRadioStation(state.radio);
+  }
+
   // --- Screens --------------------------------------------------------------
   function startPlaying(fromSave) {
     initAudio();
@@ -429,6 +465,10 @@ export function bootGame() {
       state.ammoReserve = 48;
       state.missionsCompleted = [];
       state.currentMission = 0;
+      state.radio = 0;
+      state.radioName = 'VELORA FM';
+      state.weapon = 'pistol';
+      state.goldStored = false;
       state.stats = { carsStolen: 0, distanceDriven: 0, crashes: 0, missionsDone: 0, timesBusted: 0, timesWasted: 0, kingsDefeated: 0, pedsHit: 0 };
       missions.loadSaveData({ current: 0, completed: [] });
       player.pos.set(city.spawnPoint.x, 0, city.spawnPoint.z);
@@ -468,8 +508,16 @@ export function bootGame() {
     state.clockMinutes = data.clockMinutes ?? state.clockMinutes;
     state.missionsCompleted = data.missionsCompleted || [];
     state.currentMission = data.currentMission ?? state.missionsCompleted.length;
+    state.goldStored = data.goldStored ?? false;
     state.stats = { ...state.stats, ...(data.stats || {}) };
     missions.loadSaveData({ current: state.currentMission, completed: state.missionsCompleted });
+    if (state.goldStored && !missions.goldCar) {
+      // The stored gold car waits at Mama Lou's garage.
+      const car = createCar(scene, 'sport', 0xd4af37, SAFEHOUSE.x, SAFEHOUSE.z - 8, Math.PI / 2);
+      car.parked = true;
+      parked.push(car);
+      missions.goldCar = car;
+    }
     if (data.player) {
       player.pos.set(data.player.x, 0, data.player.z);
       player.heading = data.player.heading ?? player.heading;
@@ -497,6 +545,9 @@ export function bootGame() {
     if (e.code === KEYS.horn && player.inCar && !e.repeat) playHorn();
     if (e.code === KEYS.reload && state.screen === 'playing' && !e.repeat) reload();
     if (e.code === KEYS.punch && state.screen === 'playing' && !e.repeat) punch();
+    if (e.code === KEYS.radio && state.screen === 'playing' && !e.repeat) cycleRadio();
+    if (e.code === KEYS.buyAmmo && state.screen === 'playing' && !e.repeat) buyAmmo();
+    if (e.code === KEYS.buySmg && state.screen === 'playing' && !e.repeat) buySmg();
     if (e.code === 'Space' && player.inCar) input.handbrake = true;
     if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
   });
@@ -578,8 +629,7 @@ export function bootGame() {
       if (state.gunshotTimer <= 0) state.gunshotPos = null;
     }
     if (player.inCar) {
-      // Staging only: shots.js sets autoThrottle so a staged drive shot
-      // shows the car actually moving; real play never sets this flag.
+      // Staging only: autoThrottle holds the throttle for drive shots.
       const driveInput = state.autoThrottle ? { ...input, forward: true } : input;
       const speed01 = updatePlayerCar(player.inCar, dt, driveInput, allCars(), city.colliders);
       state.speedKmh = player.inCar.speed * 3.6;
@@ -659,6 +709,30 @@ export function bootGame() {
       playPickup();
     }
     missions.update(dt);
+    // District, weapon shop and safehouse (Mama Lou's garage at the pier).
+    state.district = districtAt(player.pos.x, player.pos.z);
+    state.nearShop = !player.inCar && Math.hypot(player.pos.x - WEAPON_SHOP.x, player.pos.z - WEAPON_SHOP.z) < WEAPON_SHOP.r;
+    const inSafe = Math.hypot(player.pos.x - SAFEHOUSE.x, player.pos.z - SAFEHOUSE.z) < SAFEHOUSE.r;
+    state.inSafehouse = inSafe;
+    if (inSafe) {
+      // Heal, cool the wanted level, and store the gold car.
+      if (player.health < PLAYER_TUNING.maxHealth) {
+        healPlayer(player, dt * 2);
+        state.health = player.health;
+      }
+      if (state.wanted > 0) {
+        state.safeTimer += dt;
+        if (state.safeTimer >= 3) {
+          state.safeTimer = 0;
+          setWanted(state.wanted - 1);
+        }
+      } else state.safeTimer = 0;
+      if (player.inCar && missions.goldCar && player.inCar === missions.goldCar && !state.goldStored) {
+        state.goldStored = true;
+        showMissionCard('SAFEHOUSE', "The gold car is stored at Mama Lou's garage. It will be here when you come back.", 'complete');
+        saveGame(state);
+      }
+    } else state.safeTimer = 0;
     state.missionsCompleted = missions.completed;
     state.currentMission = missions.current;
     state.gang = combat.gang;
@@ -683,10 +757,17 @@ export function bootGame() {
     drawMinimap(state, city);
   }
 
-  // Menu backdrop: a slow orbit around downtown so the title screen
-  // sits over a living city instead of a frozen frame.
+  // Menu backdrop: a slow orbit around downtown; the cover shot holds
+  // a fixed low frame down the beachfront to the pier instead.
   function updateMenuCamera(dt) {
     state.time += dt;
+    if (state.menuFocus === 'beach') {
+      // South along the beach looking north: bright sand foreground,
+      // ocean left, pier ahead, gold car below the title panel.
+      camera.position.set(-160, 15, 80);
+      camera.lookAt(-172, 2, -20);
+      return;
+    }
     const a = state.time * 0.05;
     camera.position.set(Math.sin(a) * 120, 55, Math.cos(a) * 120);
     camera.lookAt(0, 12, 0);
@@ -743,13 +824,12 @@ export function bootGame() {
 
   const game = {
     state, scene, camera, renderer, city, player, traffic, parked, police: policeSys.cars,
-    peds, combat, missions, policeSys,
+    peds, combat, missions, policeSys, sun: lights.sun,
     startPlaying, setWanted, enterCar, exitCar, respawnPlayer,
     shootPistol, punch, reload, hurtPlayer, bustPlayer, wastePlayer, addCrime,
   };
 
-  // Screenshot staging: ?shot=drive|street|chase|start skips the menu and
-  // puts the real game in the named scene. No shot param = normal menu.
+  // Screenshot staging: ?shot= puts the real game in a named scene.
   const { shot } = readShotParams();
   if (shot) stageShot(shot, game);
 

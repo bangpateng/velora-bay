@@ -1,7 +1,5 @@
-// Pedestrians: low-poly walkers on the sidewalks of Velora Bay.
-// They stroll between waypoints, wait at crossings, flee from gunshots
-// and speeding cars, and keep a little distance from each other.
-// Spawned around the player so the streets always feel lived-in.
+// Pedestrians: low-poly walkers on the sidewalks. They stroll, wait at
+// crossings, flee gunshots and speeding cars, and keep their distance.
 import * as THREE from 'three';
 import { createRng, pick, range, clamp, angleLerp } from './utils.js';
 
@@ -214,8 +212,7 @@ export function updatePedestrians(peds, dt, ctx) {
   }
 }
 
-// Knock a pedestrian down (hit by a car or a bullet). They stay down a
-// few seconds, then get back up elsewhere.
+// Knock a pedestrian down; they get back up elsewhere.
 export function knockPedDown(ped, seconds = 4) {
   if (!ped.alive) return;
   ped.alive = false;

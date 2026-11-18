@@ -1,9 +1,7 @@
-// Missions: Rico Vale's story in five jobs. He owes Mama Lou; the Kings
-// run the streets. Each mission is a short chain of steps — go somewhere,
-// steal something, defeat someone, survive — driven by a floating beacon
-// in the world, a minimap diamond and the HUD objective line.
-// Walk into the beacon to start the next unlocked mission; failing a
-// mission sends you back to its beacon to retry.
+// Missions: Rico Vale's story in eight jobs. Each is a short chain of
+// steps — go somewhere, steal something, defeat someone, survive —
+// driven by a floating beacon, a minimap diamond and the HUD objective.
+// Walk into the beacon to start; failing sends you back to retry.
 import * as THREE from 'three';
 import { clamp } from './utils.js';
 
@@ -14,6 +12,8 @@ const PARK = { x: 145, z: 145 };         // the city park, south-east
 const PLAZA = { x: 0, z: 0 };            // downtown plaza
 const SHOWROOM = { x: 87, z: 29 };       // gold sports car showroom
 const BANK = { x: 58, z: 58 };           // the bank, downtown
+const BOAT = { x: -214, z: 0 };          // escape boat past the pier end
+const HIDEOUT = { x: 145, z: 145 };      // crew hideout, by the park
 
 export const MISSIONS = [
   {
@@ -63,9 +63,39 @@ export const MISSIONS = [
       { type: 'goto', x: PIER.x, z: PIER.z, r: 9, label: 'Reach the pier — finish the job' },
     ],
   },
+  {
+    id: 'm6', title: 'Getaway Driver', reward: 1500,
+    intro: 'Mama Lou: "Meet Danny at the docks — he is the best wheelman in Velora Bay, and he owes me too. Pick him up and drive him to the hideout by the park. The cops know his face, so keep moving."',
+    outro: 'Danny: "You drive like you mean it, Rico. We are a crew now — you, me, and Lou."',
+    steps: [
+      { type: 'goto', x: DOCKS.x, z: DOCKS.z, r: 10, label: 'Meet Danny at the docks' },
+      { type: 'pickup', x: DOCKS.x, z: DOCKS.z, r: 6, label: 'Pick up Danny', wantedOnPickup: 2 },
+      { type: 'driveTo', x: HIDEOUT.x, z: HIDEOUT.z, r: 12, label: 'Drive Danny to the hideout by the park' },
+    ],
+  },
+  {
+    id: 'm7', title: 'Pier Escape', reward: 1800,
+    intro: 'Mama Lou: "The Kings torched my garage, Rico. A boat is waiting past the pier — but the cops are already on the beachfront. Hold the pier for forty-five seconds, then run for the boat."',
+    outro: 'The boat pulls away as the sirens fade. Lou is already planning the next move.',
+    steps: [
+      { type: 'goto', x: PIER.x, z: PIER.z, r: 10, label: 'Reach the pier' },
+      { type: 'survive', seconds: 45, wanted: 3, label: 'Hold the pier for 45s at wanted level 3' },
+      { type: 'goto', x: BOAT.x, z: BOAT.z, r: 8, label: 'Reach the boat — escape by sea' },
+    ],
+  },
+  {
+    id: 'm8', title: 'Kingpin', reward: 4000,
+    intro: 'Mama Lou: "One name left: Big Sal, the Kings\' boss. He hides in the warehouse at the docks with five of his best. Take them all down — Sal most of all — and Velora Bay is yours."',
+    outro: 'Big Sal is down. The Kings are finished. Rico Vale runs Velora Bay now.',
+    steps: [
+      { type: 'goto', x: DOCKS.x, z: DOCKS.z, r: 12, label: 'Reach the Kings\' warehouse at the docks' },
+      { type: 'kill', count: 6, x: DOCKS.x, z: DOCKS.z, r: 32, label: 'Defeat Big Sal and 5 Kings', spawnGang: true, boss: true },
+      { type: 'escape', x: DOCKS.x, z: DOCKS.z, r: 60, label: 'Leave the docks — the city is yours' },
+    ],
+  },
 ];
 
-export const MISSION_SPOTS = { PIER, DOCKS, PARK, PLAZA, SHOWROOM, BANK };
+export const MISSION_SPOTS = { PIER, DOCKS, PARK, PLAZA, SHOWROOM, BANK, BOAT, HIDEOUT };
 
 function buildBeacon(scene) {
   const group = new THREE.Group();
@@ -134,8 +164,7 @@ export function createMissionSystem(scene, city, hooks) {
     if (hooks.showCard) hooks.showCard(title, body, kind);
   }
 
-  // Point the beacon at whatever the player must do next: the start of
-  // the next mission while waiting, or the current step while running.
+  // Point the beacon at what the player must do next.
   function pointBeacon() {
     const m = currentMission();
     if (!m) {
@@ -173,7 +202,7 @@ export function createMissionSystem(scene, city, hooks) {
     const step = currentStep();
     if (!step) { sys.completeMission(); return; }
     if (step.type === 'kill' && step.spawnGang && hooks.spawnGang) {
-      hooks.spawnGang(step.x, step.z, step.count);
+      hooks.spawnGang(step.x, step.z, step.count, step.boss);
     }
     if (step.type === 'stealGold' && hooks.spawnGoldCar) {
       sys.goldCar = hooks.spawnGoldCar(SHOWROOM.x, SHOWROOM.z);
@@ -182,7 +211,7 @@ export function createMissionSystem(scene, city, hooks) {
       sys.surviveLeft = step.seconds;
       if (hooks.setWanted) hooks.setWanted(step.wanted);
     }
-    if (step.type === 'goto' || step.type === 'pickup' || step.type === 'stealGold' || step.type === 'escape') {
+    if (step.type === 'goto' || step.type === 'pickup' || step.type === 'stealGold' || step.type === 'escape' || step.type === 'driveTo') {
       moveBeaconTo(step.x, step.z);
     }
     const m = currentMission();
@@ -262,6 +291,11 @@ export function createMissionSystem(scene, city, hooks) {
     switch (step.type) {
       case 'goto':
         if (dist < step.r) sys.advanceToStep(sys.stepIndex + 1);
+        break;
+      case 'driveTo':
+        // Like goto, but the player must arrive in a car — a driving job.
+        if (dist < step.r && hooks.isInCar && hooks.isInCar()) sys.advanceToStep(sys.stepIndex + 1);
+        else if (dist < step.r) setObjective(`${m.title}: get in a car — Danny rides, he does not walk`);
         break;
       case 'pickup':
         if (dist < step.r) {

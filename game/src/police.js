@@ -1,6 +1,5 @@
-// Police and the wanted system: pursuit cars, foot cops, busts, and
-// Lou's Paint Shop. Wanted runs 0-5 stars; crimes raise it, staying out
-// of sight lowers it, and a $200 repaint clears it outright.
+// Police and the wanted system: pursuit cars, foot cops, helicopter,
+// roadblocks, busts, and Lou's Paint Shop. Wanted runs 0-5 stars.
 import * as THREE from 'three';
 import { clamp, angleLerp, createRng, range } from './utils.js';
 import { createCar, damageCar } from './vehicles.js';
@@ -54,8 +53,7 @@ function makeCopModel() {
   return group;
 }
 
-// Lou's Paint Shop: a marked garage near the pier. Drive in and the
-// wanted level is wiped for $200.
+// Lou's Paint Shop: drive in, pay $200, walk out clean.
 export function buildPaintShop(scene) {
   const group = new THREE.Group();
   const walls = new THREE.Mesh(
@@ -90,18 +88,70 @@ export function buildPaintShop(scene) {
   return group;
 }
 
+function makeHeliModel() {
+  const group = new THREE.Group();
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1c2733, roughness: 0.6, metalness: 0.3 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.6, 5), dark);
+  body.castShadow = true;
+  group.add(body);
+  const glass = new THREE.Mesh(
+    new THREE.BoxGeometry(2.6, 1, 1.6),
+    new THREE.MeshStandardMaterial({ color: 0x9fd8ff, roughness: 0.15, metalness: 0.5 }),
+  );
+  glass.position.set(0, 0.3, 2.2);
+  group.add(glass);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 5.5), dark);
+  tail.position.set(0, 0.3, -4.6);
+  group.add(tail);
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 });
+  const rotor = new THREE.Mesh(new THREE.BoxGeometry(11, 0.08, 0.5), bladeMat);
+  rotor.position.y = 1.2;
+  group.add(rotor);
+  const rotor2 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 11), bladeMat);
+  rotor2.position.y = 1.2;
+  group.add(rotor2);
+  // Searchlight: a translucent cone, apex at the heli, widening down.
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(6, 12, 16, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  cone.position.y = -6;
+  group.add(cone);
+  group.userData = { rotor, rotor2 };
+  return group;
+}
+
+// Roadblock barricade: two striped planks on legs, spanning a road.
+function makeRoadblock() {
+  const group = new THREE.Group();
+  const orange = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.7 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.7 });
+  for (const [y, mat] of [[1.1, orange], [0.55, white]]) {
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(13, 0.5, 0.25), mat);
+    plank.position.y = y;
+    plank.castShadow = true;
+    group.add(plank);
+  }
+  for (const sx of [-5.5, 5.5]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.4, 1.2), orange);
+    leg.position.set(sx, 0.7, 0);
+    group.add(leg);
+  }
+  return group;
+}
+
 export function createPoliceSystem(scene, city, hooks) {
   const sys = {
     cars: [],
     cops: [],
+    heli: null,
+    blocks: [],
     unseenTimer: 0,
     bustTimer: 0,
     paintCooldown: 0,
   };
 
   function spawnPoliceCar(near) {
-    // Spawn on a road line near the player so the car arrives driving,
-    // not popping in through a building.
     const rng = createRng((Math.random() * 1e9) | 0);
     const lines = city.roadLines.filter((l) => Math.abs(l - near.x) < 90 || Math.abs(l - near.z) < 90);
     const line = lines.length ? lines[Math.floor(rng() * lines.length)] : 0;
@@ -111,8 +161,7 @@ export function createPoliceSystem(scene, city, hooks) {
     const car = createCar(scene, 'police', 0x1c2733, x, z, 0);
     car.isPolice = true;
     car.cruise = 0;
-    // Alternate a lateral offset so two pursuers fan out instead of
-    // stacking on the exact same line behind the player.
+    // Offset pursuers sideways so they fan out instead of stacking.
     car.pursuitOffset = sys.cars.length % 2 === 0 ? -3.5 : 3.5;
     sys.cars.push(car);
     return car;
@@ -149,18 +198,19 @@ export function createPoliceSystem(scene, city, hooks) {
   sys.clearAll = () => {
     for (const car of [...sys.cars]) removeCar(car);
     for (const cop of [...sys.cops]) removeCop(cop);
+    if (sys.heli) { scene.remove(sys.heli.model); sys.heli = null; }
+    for (const b of sys.blocks) scene.remove(b.model);
+    sys.blocks = [];
     sys.unseenTimer = 0;
     sys.bustTimer = 0;
   };
 
-  // One frame of the wanted system. ctx: { player, playerPos,
-  // playerSpeed, playerInCar, wanted, setWanted, allCars, colliders,
-  // time }. Returns an event string ('busted' | 'painted' | '').
+  // One frame of the wanted system; returns 'busted' | 'painted' | ''.
   sys.update = (dt, ctx) => {
     const { playerPos, playerInCar, wanted } = ctx;
     sys.paintCooldown = Math.max(0, sys.paintCooldown - dt);
 
-    // --- How many pursuers does this wanted level deserve? ------------
+    // Pursuer counts by wanted level.
     const wantCars = wanted >= 1 ? Math.min(1 + Math.floor(wanted / 2), 3) : 0;
     while (sys.cars.length < wantCars) spawnPoliceCar(playerPos);
     while (sys.cars.length > wantCars) removeCar(sys.cars[sys.cars.length - 1]);
@@ -173,8 +223,7 @@ export function createPoliceSystem(scene, city, hooks) {
       const dx = playerPos.x - cop.pos.x;
       const dz = playerPos.z - cop.pos.z;
       const dist = Math.hypot(dx, dz);
-      // Aim slightly ahead of the player to cut them off when close,
-      // offset sideways so pursuers fan out instead of stacking up.
+      // Aim slightly ahead to cut the player off when close.
       const lead = clamp(dist * 0.12, 0, 8);
       const tx0 = playerPos.x + Math.sin(ctx.playerHeading || 0) * lead * (ctx.playerSpeed || 0) * 0.05;
       const tz0 = playerPos.z + Math.cos(ctx.playerHeading || 0) * lead * (ctx.playerSpeed || 0) * 0.05;
@@ -243,6 +292,61 @@ export function createPoliceSystem(scene, city, hooks) {
       }
     } else {
       sys.bustTimer = Math.max(0, sys.bustTimer - dt * 2);
+    }
+
+    // Helicopter at 4-5 stars: hovers ahead, searchlight on the player.
+    if (wanted >= 4) {
+      if (!sys.heli) {
+        const model = makeHeliModel();
+        model.position.set(playerPos.x, 12, playerPos.z);
+        scene.add(model);
+        sys.heli = { model, pos: model.position };
+      }
+      const h = sys.heli;
+      const hd = ctx.playerHeading || 0;
+      const k = Math.min(1, dt * 1.5);
+      h.pos.x += (playerPos.x + Math.sin(hd) * 30 - h.pos.x) * k;
+      h.pos.z += (playerPos.z + Math.cos(hd) * 30 - h.pos.z) * k;
+      h.pos.y += (12 - h.pos.y) * k;
+      h.model.rotation.y = hd;
+      h.model.userData.rotor.rotation.y += dt * 22;
+      h.model.userData.rotor2.rotation.y += dt * 22;
+      if (hooks.startRotor) hooks.startRotor();
+    } else if (sys.heli) {
+      scene.remove(sys.heli.model);
+      sys.heli = null;
+      if (hooks.stopRotor) hooks.stopRotor();
+    }
+
+    // Roadblocks at 3+ stars: barricades across the road ahead.
+    const wantBlocks = wanted >= 3 ? 2 : 0;
+    while (sys.blocks.length < wantBlocks) {
+      const model = makeRoadblock();
+      const hd0 = ctx.playerHeading || 0;
+      const ahead = 70 + sys.blocks.length * 30; // stagger: 70m, 100m
+      model.position.set(playerPos.x + Math.sin(hd0) * ahead, 0, playerPos.z + Math.cos(hd0) * ahead);
+      model.rotation.y = hd0;
+      scene.add(model);
+      sys.blocks.push({ model, pos: model.position });
+    }
+    while (sys.blocks.length > wantBlocks) scene.remove(sys.blocks.pop().model);
+    for (const b of sys.blocks) {
+      const hd = ctx.playerHeading || 0;
+      const dx = playerPos.x - b.pos.x;
+      const dz = playerPos.z - b.pos.z;
+      if (dx * Math.sin(hd) + dz * Math.cos(hd) > 2 || Math.hypot(dx, dz) > 90) {
+        b.pos.set(playerPos.x + Math.sin(hd) * 70, 0, playerPos.z + Math.cos(hd) * 70);
+        b.model.rotation.y = hd;
+      }
+      if (playerInCar) {
+        const d = Math.hypot(playerInCar.pos.x - b.pos.x, playerInCar.pos.z - b.pos.z);
+        if (d < 3.4) {
+          playerInCar.pos.x = b.pos.x + ((playerInCar.pos.x - b.pos.x) / (d || 1)) * 3.4;
+          playerInCar.pos.z = b.pos.z + ((playerInCar.pos.z - b.pos.z) / (d || 1)) * 3.4;
+          playerInCar.speed *= 0.25;
+          damageCar(playerInCar, 8);
+        }
+      }
     }
 
     // --- Wanted decay: unseen for a few seconds, one star drops off ---

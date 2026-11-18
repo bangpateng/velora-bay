@@ -1,7 +1,6 @@
-// The HUD: health bar, cash, wanted stars, ammo, speed, clock and the
-// objective line, plus a live 2D minimap drawn from the world state.
-// Phase B adds the phone, weapon wheel and mission tracker here.
-import { WANTED_MAX } from './config.js';
+// The HUD: health, cash, wanted stars, ammo, speed, clock, objective,
+// radio and district, plus a live 2D minimap drawn from the world state.
+import { WANTED_MAX, DISTRICTS } from './config.js';
 
 let els = null;
 let minimap = null;
@@ -13,7 +12,9 @@ export function initHUD() {
     healthText: document.getElementById('health-text'),
     cash: document.getElementById('cash'),
     stars: document.getElementById('stars'),
+    district: document.getElementById('district'),
     ammo: document.getElementById('ammo'),
+    radio: document.getElementById('radio'),
     speed: document.getElementById('speed'),
     clock: document.getElementById('clock'),
     objective: document.getElementById('objective'),
@@ -41,8 +42,7 @@ export function formatCash(amount) {
   return `$${Math.floor(amount).toLocaleString('en-US')}`;
 }
 
-// One call per frame: cheap DOM writes only when the text actually
-// changed, so the HUD never costs a layout per frame.
+// One call per frame: DOM writes only when the text actually changed.
 export function updateHUD(state) {
   if (!els) return;
   const healthPct = Math.max(0, Math.min(100, state.health));
@@ -55,6 +55,13 @@ export function updateHUD(state) {
     if (els.stars.textContent !== stars) els.stars.textContent = stars;
     els.stars.classList.toggle('hot', state.wanted >= 3);
   }
+  if (els.district && els.district.textContent !== (state.district || '')) {
+    els.district.textContent = state.district || '';
+  }
+  if (els.radio) {
+    const r = state.inCar ? `♪ ${state.radioName || ''}` : '';
+    if (els.radio.textContent !== r) els.radio.textContent = r;
+  }
   if (els.ammo) els.ammo.textContent = state.inCar ? '—' : `${state.ammo} / ${state.ammoReserve ?? 0}`;
   if (els.speed) {
     const kmh = Math.round(Math.abs(state.speedKmh || 0));
@@ -65,11 +72,12 @@ export function updateHUD(state) {
     els.objective.textContent = state.objective;
   }
   if (els.hint) {
-    const hint = state.inCar
-      ? 'E — exit car · Space — handbrake · H — horn'
-      : state.nearCar
-        ? 'E — steal car · Click — shoot · F — punch · R — reload · Shift — sprint'
-        : 'WASD — move · Click — shoot · F — punch · R — reload · E — enter car · M — missions';
+    let hint;
+    if (state.nearShop) hint = 'B — buy ammo $50 · N — SMG $500 · E — steal car · Click — shoot';
+    else if (state.inCar) hint = 'E — exit car · Space — handbrake · H — horn · Q — radio';
+    else if (state.nearCar) hint = 'E — steal car · Click — shoot · F — punch · R — reload · Shift — sprint';
+    else hint = 'WASD — move · Click — shoot · F — punch · R — reload · E — enter car · M — missions';
+    if (state.inSafehouse) hint = 'SAFEHOUSE — healing, heat cooling off · ' + hint;
     if (els.hint.textContent !== hint) els.hint.textContent = hint;
   }
   if (els.missionTimer) {
@@ -116,9 +124,8 @@ export function updateMissionList(missions, currentIndex, completed) {
   });
 }
 
-// Top-down minimap: ocean on the west edge, roads as lines, the player
-// as a white arrow, traffic as yellow dots, police as flashing blue/red
-// dots, and the mission marker as a gold diamond.
+// Top-down minimap: ocean, roads, player arrow, traffic, police, peds,
+// gang, mission marker, district names and shop markers.
 export function drawMinimap(state, city) {
   if (!minimapCtx || !city) return;
   const size = minimap.width;
@@ -152,6 +159,26 @@ export function drawMinimap(state, city) {
     const [px, pz] = toMap(city.parkCenter.x, city.parkCenter.z);
     ctx.fillStyle = '#3d8a3f';
     ctx.fillRect(px - 10, pz - 10, 20, 20);
+  }
+  // District names, clamped so long names stay on the map.
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = 'bold 10px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  for (const d of DISTRICTS) {
+    const [cx, cz] = toMap((d.x0 + d.x1) / 2, (d.z0 + d.z1) / 2);
+    ctx.fillText(d.name.toUpperCase(), Math.max(36, Math.min(size - 36, cx)), Math.max(14, Math.min(size - 8, cz)));
+  }
+  ctx.textAlign = 'left';
+  // Safehouse (green) and weapon shop (orange).
+  if (city.safehouse) {
+    const [sx, sz] = toMap(city.safehouse.x, city.safehouse.z);
+    ctx.fillStyle = '#7be495';
+    ctx.fillRect(sx - 3, sz - 3, 6, 6);
+  }
+  if (city.weaponShop) {
+    const [wx, wz] = toMap(city.weaponShop.x, city.weaponShop.z);
+    ctx.fillStyle = '#ff9a3d';
+    ctx.fillRect(wx - 3, wz - 3, 6, 6);
   }
   // Mission marker.
   if (state.missionMarker) {
@@ -219,8 +246,7 @@ export function showStartScreen(show) {
   if (el) el.style.display = show ? 'flex' : 'none';
 }
 
-// The HUD belongs to play, not to the menus: hide it under the title
-// screen and show it again when a game starts.
+// The HUD belongs to play, not to the menus.
 export function setHudVisible(visible) {
   for (const el of document.querySelectorAll('.hud')) {
     el.style.display = visible ? '' : 'none';

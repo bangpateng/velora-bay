@@ -1,9 +1,8 @@
-// Velora Bay itself: a sun-soaked coastal grid city built from shared
-// geometries and canvas textures — no model files, no image files.
-// buildCity returns the collision boxes and the road network the traffic
-// AI and the minimap both read from, so the city is one source of truth.
+// Velora Bay itself: a sun-soaked coastal grid city from shared
+// geometries and canvas textures. buildCity returns the colliders and
+// road network the traffic AI and minimap both read from.
 import * as THREE from 'three';
-import { CITY, COLORS } from './config.js';
+import { CITY, COLORS, SAFEHOUSE, WEAPON_SHOP } from './config.js';
 import {
   createRng, pick, range, clamp,
   makeBuildingTexture, makeRoadTexture, makeCrosswalkTexture, makeSidewalkTexture,
@@ -100,8 +99,7 @@ export function buildCity(scene) {
   scene.add(beach);
 
   // --- Roads, sidewalks and crosswalks -----------------------------------
-  // Two texture instances: one tiled along Z-roads, one rotated and tiled
-  // along X-roads, so the centre dashes run down the road, not across it.
+  // One road texture tiled along Z, one rotated for X-roads.
   const roadTexZ = makeRoadTexture();
   roadTexZ.wrapS = THREE.RepeatWrapping;
   roadTexZ.wrapT = THREE.RepeatWrapping;
@@ -192,7 +190,6 @@ export function buildCity(scene) {
       tower.receiveShadow = true;
       scene.add(tower);
       colliders.push({ minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2 });
-      // Rooftop beacon so towers read at a distance.
       const beacon = new THREE.Mesh(
         new THREE.SphereGeometry(0.6, 8, 6),
         new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0xff2222, emissiveIntensity: 1.4 }),
@@ -302,12 +299,91 @@ export function buildCity(scene) {
   }
   const pierEnd = { x: -204, z: 0 };
 
+  // --- Mama Lou's garage (safehouse) beside the pier entrance ---------
+  // Open ground west of the road; the pier walkway (z -4..4) stays clear.
+  const garage = new THREE.Group();
+  const gWalls = new THREE.Mesh(
+    new THREE.BoxGeometry(16, 5, 11),
+    new THREE.MeshStandardMaterial({ color: 0xffd9c2, roughness: 0.9 }),
+  );
+  gWalls.position.y = 2.5;
+  gWalls.castShadow = true;
+  garage.add(gWalls);
+  const gDoor = new THREE.Mesh(
+    new THREE.BoxGeometry(10, 3.8, 0.3),
+    new THREE.MeshStandardMaterial({ color: 0x3a3f45, roughness: 0.6, metalness: 0.4 }),
+  );
+  gDoor.position.set(0, 1.9, -5.6);
+  garage.add(gDoor);
+  const gSign = new THREE.Mesh(
+    new THREE.BoxGeometry(12, 1.4, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x7be495, emissive: 0x2a7a44, emissiveIntensity: 0.7 }),
+  );
+  gSign.position.set(0, 5.8, -5.6);
+  garage.add(gSign);
+  garage.position.set(SAFEHOUSE.x, 0, SAFEHOUSE.z + 12);
+  scene.add(garage);
+  colliders.push({
+    minX: SAFEHOUSE.x - 8, maxX: SAFEHOUSE.x + 8,
+    minZ: SAFEHOUSE.z + 6.5, maxZ: SAFEHOUSE.z + 17.5,
+  });
+
+  // --- VELORA ARMS weapon kiosk on the beachfront promenade -----------
+  const kiosk = new THREE.Group();
+  const kBody = new THREE.Mesh(
+    new THREE.BoxGeometry(4.5, 3, 3.5),
+    new THREE.MeshStandardMaterial({ color: 0xffc2d1, roughness: 0.85 }),
+  );
+  kBody.position.y = 1.5;
+  kBody.castShadow = true;
+  kiosk.add(kBody);
+  const kSign = new THREE.Mesh(
+    new THREE.BoxGeometry(4.5, 0.9, 0.3),
+    new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xaa7711, emissiveIntensity: 0.7 }),
+  );
+  kSign.position.set(0, 3.4, 1.8);
+  kiosk.add(kSign);
+  kiosk.position.set(WEAPON_SHOP.x, 0, WEAPON_SHOP.z);
+  scene.add(kiosk);
+  colliders.push({
+    minX: WEAPON_SHOP.x - 2.3, maxX: WEAPON_SHOP.x + 2.3,
+    minZ: WEAPON_SHOP.z - 1.8, maxZ: WEAPON_SHOP.z + 1.8,
+  });
+
+  // --- Escape boat moored just past the pier end (M7) ------------------
+  const boat = new THREE.Group();
+  const hull = new THREE.Mesh(
+    new THREE.BoxGeometry(9, 1.4, 3.4),
+    new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.5 }),
+  );
+  hull.position.y = 0.4;
+  hull.castShadow = true;
+  boat.add(hull);
+  const cabin = new THREE.Mesh(
+    new THREE.BoxGeometry(3.2, 1.6, 2.4),
+    new THREE.MeshStandardMaterial({ color: 0x2e6f8e, roughness: 0.5 }),
+  );
+  cabin.position.set(-0.5, 1.8, 0);
+  boat.add(cabin);
+  const mast = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 5, 6),
+    new THREE.MeshStandardMaterial({ color: 0x8a6a44, roughness: 0.8 }),
+  );
+  mast.position.set(1.5, 3.6, 0);
+  boat.add(mast);
+  boat.position.set(pierEnd.x - 10, 0, pierEnd.z);
+  scene.add(boat);
+  const boatEnd = { x: pierEnd.x - 10, z: pierEnd.z };
+
   return {
     colliders,
     roads,
     roadLines: lines,
     parkCenter,
     pierEnd,
+    boatEnd,
+    safehouse: SAFEHOUSE,
+    weaponShop: WEAPON_SHOP,
     downtownCenter: { x: 0, z: 0 },
     // First mission marker: meet Mama Lou at the end of the pier.
     missionMarker: { x: pierEnd.x, z: pierEnd.z, label: 'Meet Mama Lou at the pier' },

@@ -20,6 +20,7 @@
   #stars.hot { color: #ff5a4e; animation: blink 0.7s steps(2) infinite; }
   @keyframes blink { 50% { opacity: .45; } }
   #clock { font-size: 18px; font-weight: 700; margin-top: 2px; }
+  #district { font-size: 14px; font-weight: 700; color: #9fd8ff; margin-top: 2px; letter-spacing: 1px; }
   #minimap { display: block; margin-top: 8px; border: 2px solid rgba(255,255,255,.75); border-radius: 4px; background: rgba(16,24,34,.9); }
   #hud-bottomleft { left: 16px; bottom: 16px; max-width: 46%; }
   #objective { font-size: 17px; font-weight: 700; color: #ffd23f; }
@@ -27,6 +28,7 @@
   #hud-bottomright { right: 16px; bottom: 16px; text-align: right; }
   #speed { font-size: 30px; font-weight: 800; }
   #ammo { font-size: 15px; font-weight: 700; opacity: .95; }
+  #radio { font-size: 15px; font-weight: 700; color: #ffd23f; margin-top: 4px; }
   #ammo::before { content: "AMMO "; color: #ffd23f; }
   .overlay { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
     background: linear-gradient(180deg, rgba(6,18,32,.55), rgba(6,18,32,.82)); }
@@ -79,6 +81,7 @@
 <div class="hud" id="hud-topright">
   <div id="stars">☆☆☆☆☆</div>
   <div id="clock">Day 1  08:15</div>
+  <div id="district">Beachfront</div>
   <canvas id="minimap" width="180" height="180"></canvas>
 </div>
 <div class="hud" id="hud-bottomleft">
@@ -92,6 +95,7 @@
 <div class="hud" id="hud-bottomright">
   <div id="speed">ON FOOT</div>
   <div id="ammo">24</div>
+  <div id="radio"></div>
 </div>
 
 <div class="overlay" id="start-screen">
@@ -104,7 +108,8 @@
     <div class="controls">
       <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> look, <b>Click</b> shoot &nbsp;·&nbsp; <b>Shift</b> sprint<br>
       <b>Space</b> jump / handbrake &nbsp;·&nbsp; <b>E</b> steal / exit car &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>R</b> reload<br>
-      <b>H</b> horn &nbsp;·&nbsp; <b>M</b> missions &nbsp;·&nbsp; <b>Esc</b> pause
+      <b>H</b> horn &nbsp;·&nbsp; <b>M</b> missions &nbsp;·&nbsp; <b>Esc</b> pause<br>
+      <b>Q</b> radio &nbsp;·&nbsp; <b>B</b> buy ammo &nbsp;·&nbsp; <b>N</b> buy SMG (at VELORA ARMS on the beachfront)
     </div>
     <button id="btn-new">New Game</button>
     <button id="btn-continue" class="ghost" style="display:none">Continue</button>
