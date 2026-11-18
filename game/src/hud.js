@@ -18,6 +18,13 @@ export function initHUD() {
     clock: document.getElementById('clock'),
     objective: document.getElementById('objective'),
     hint: document.getElementById('hint'),
+    missionTimer: document.getElementById('mission-timer'),
+    crosshair: document.getElementById('crosshair'),
+    vignette: document.getElementById('damage-vignette'),
+    missionCard: document.getElementById('mission-card'),
+    missionCardTitle: document.getElementById('mission-card-title'),
+    missionCardBody: document.getElementById('mission-card-body'),
+    missionList: document.getElementById('mission-list'),
   };
   minimap = document.getElementById('minimap');
   if (minimap) minimapCtx = minimap.getContext('2d');
@@ -48,7 +55,7 @@ export function updateHUD(state) {
     if (els.stars.textContent !== stars) els.stars.textContent = stars;
     els.stars.classList.toggle('hot', state.wanted >= 3);
   }
-  if (els.ammo) els.ammo.textContent = state.inCar ? '—' : `${state.ammo}`;
+  if (els.ammo) els.ammo.textContent = state.inCar ? '—' : `${state.ammo} / ${state.ammoReserve ?? 0}`;
   if (els.speed) {
     const kmh = Math.round(Math.abs(state.speedKmh || 0));
     els.speed.textContent = state.inCar ? `${kmh} km/h` : 'ON FOOT';
@@ -61,10 +68,52 @@ export function updateHUD(state) {
     const hint = state.inCar
       ? 'E — exit car · Space — handbrake · H — horn'
       : state.nearCar
-        ? 'E — steal car · Shift — sprint · Space — jump'
-        : 'WASD — move · Shift — sprint · Space — jump · E — enter car';
+        ? 'E — steal car · Click — shoot · F — punch · R — reload · Shift — sprint'
+        : 'WASD — move · Click — shoot · F — punch · R — reload · E — enter car · M — missions';
     if (els.hint.textContent !== hint) els.hint.textContent = hint;
   }
+  if (els.missionTimer) {
+    const t = state.missionTimer > 0 ? `⏱ ${state.missionTimer}s` : '';
+    if (els.missionTimer.textContent !== t) els.missionTimer.textContent = t;
+  }
+  // Damage vignette: a red flash that fades after the player is hurt.
+  if (els.vignette) {
+    els.vignette.style.opacity = String(Math.max(0, Math.min(1, state.damageFlash || 0)));
+  }
+  // Crosshair: only on foot, when the pistol is out.
+  if (els.crosshair) {
+    els.crosshair.style.display = !state.inCar && state.screen === 'playing' ? 'block' : 'none';
+  }
+}
+
+// A mission intro/outro card, centre screen, fading after a few seconds.
+let cardTimer = null;
+export function showMissionCard(title, body, kind = 'info') {
+  if (!els || !els.missionCard) return;
+  els.missionCardTitle.textContent = title;
+  els.missionCardBody.textContent = body;
+  els.missionCard.className = `mission-card show ${kind}`;
+  if (cardTimer) clearTimeout(cardTimer);
+  cardTimer = setTimeout(() => {
+    els.missionCard.classList.remove('show');
+  }, 6000);
+}
+
+export function hideMissionCard() {
+  if (els && els.missionCard) els.missionCard.classList.remove('show');
+}
+
+// Mission list for the pause screen: done, current, locked.
+export function updateMissionList(missions, currentIndex, completed) {
+  if (!els || !els.missionList) return;
+  els.missionList.innerHTML = '';
+  missions.forEach((m, i) => {
+    const li = document.createElement('li');
+    const done = completed.includes(m.id);
+    li.textContent = `${done ? '✓' : i === currentIndex ? '►' : '·'} ${i + 1}. ${m.title} — $${m.reward.toLocaleString('en-US')}${done ? ' (done)' : ''}`;
+    li.style.color = done ? '#7be495' : i === currentIndex ? '#ffd23f' : '#cdd8e2';
+    els.missionList.appendChild(li);
+  });
 }
 
 // Top-down minimap: ocean on the west edge, roads as lines, the player
@@ -121,6 +170,19 @@ export function drawMinimap(state, city) {
   ctx.fillStyle = '#ffe27a';
   for (const car of state.traffic || []) {
     const [cx, cz] = toMap(car.pos.x, car.pos.z);
+    ctx.fillRect(cx - 1.5, cz - 1.5, 3, 3);
+  }
+  // Pedestrian dots (grey) and Kings gang members (red).
+  ctx.fillStyle = 'rgba(200,200,200,0.85)';
+  for (const ped of state.peds || []) {
+    if (!ped.alive) continue;
+    const [cx, cz] = toMap(ped.pos.x, ped.pos.z);
+    ctx.fillRect(cx - 1, cz - 1, 2, 2);
+  }
+  ctx.fillStyle = '#ff4444';
+  for (const m of state.gang || []) {
+    if (!m.alive) continue;
+    const [cx, cz] = toMap(m.pos.x, m.pos.z);
     ctx.fillRect(cx - 1.5, cz - 1.5, 3, 3);
   }
   // Police dots (flashing — Phase B drives these from real pursuit).

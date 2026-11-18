@@ -38,6 +38,13 @@ if (existsSync(join(here, 'screenshots'))) {
 // game/ counts beside /output's own 1000-entry cap, its screenshots/ and
 // dossier.json). These caps match the gate exactly, so a local run that
 // passes them is shaped the same way the grader's run will be.
+// Phase B note: the hand-in also refuses to build a dossier from a
+// screenshots/ folder that is missing entirely — the four staged shots
+// (1-start, 2-drive, 3-street, 4-chase) are part of the entry, so a
+// missing folder fails loudly here instead of silently scoring zero.
+if (!existsSync(join(here, 'screenshots'))) {
+  throw new Error('screenshots/ is missing — the four staged shots are part of the entry');
+}
 writeFileSync(
   join(out, 'dossier.json'),
   buildDossier(out, {

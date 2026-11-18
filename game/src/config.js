@@ -67,7 +67,32 @@ export const KEYS = {
   handbrake: 'Space',
   pause: 'Escape',
   horn: 'KeyH',
-  // Phase B will add: shoot (Mouse0), reload (KeyR), phone (KeyT).
+  reload: 'KeyR',
+  punch: 'KeyF',
+  missions: 'KeyM',
+  // Mouse: click to shoot (when the pointer is locked).
+};
+
+export const PED_TUNING = {
+  count: 40,
+  fleeRadius: 38,
+};
+
+export const POLICE_TUNING = {
+  paintPrice: 200,
+  bustSeconds: 2,
+  decayBaseSeconds: 4,
+};
+
+export const COMBAT_TUNING = {
+  pistolDamage: 34,
+  punchDamage: 30,
+  gangShotDamage: 8,
+  gangHitChance: 0.12,
+  shootRange: 70,
+  startAmmo: 24,
+  pickupAmmo: 24,
+  pickupHealth: 40,
 };
 
 export const COLORS = {

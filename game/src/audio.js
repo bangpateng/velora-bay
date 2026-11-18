@@ -87,9 +87,48 @@ export function playCash() {
 }
 
 export function playSiren() {
-  // Two-tone wail, one cycle; Phase B loops it while police pursue.
+  // Two-tone wail, one cycle; startSirenLoop repeats it while police pursue.
   blip(750, 0.45, 'sine', 0.1, 1050);
   setTimeout(() => blip(1050, 0.45, 'sine', 0.1, 750), 450);
+}
+
+let sirenTimer = null;
+export function startSirenLoop() {
+  if (sirenTimer) return;
+  playSiren();
+  sirenTimer = setInterval(playSiren, 950);
+}
+
+export function stopSirenLoop() {
+  if (!sirenTimer) return;
+  clearInterval(sirenTimer);
+  sirenTimer = null;
+}
+
+export function playPunch() {
+  noiseBurst(0.09, 0.35, 700);
+  blip(120, 0.08, 'sine', 0.15, 70);
+}
+
+export function playPickup() {
+  blip(520, 0.08, 'sine', 0.14);
+  setTimeout(() => blip(780, 0.12, 'sine', 0.14), 80);
+}
+
+export function playReload() {
+  blip(420, 0.06, 'square', 0.08);
+  setTimeout(() => blip(560, 0.06, 'square', 0.08), 140);
+}
+
+export function playMission() {
+  blip(523, 0.12, 'sine', 0.16);
+  setTimeout(() => blip(659, 0.12, 'sine', 0.16), 120);
+  setTimeout(() => blip(784, 0.2, 'sine', 0.16), 240);
+}
+
+export function playBusted() {
+  blip(392, 0.18, 'sawtooth', 0.12, 196);
+  setTimeout(() => blip(311, 0.3, 'sawtooth', 0.12, 155), 200);
 }
 
 export function playHorn() {

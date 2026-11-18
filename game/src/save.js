@@ -13,9 +13,11 @@ export function saveGame(state) {
       health: state.health,
       wanted: state.wanted,
       ammo: state.ammo,
+      ammoReserve: state.ammoReserve ?? 0,
       day: state.day,
       clockMinutes: state.clockMinutes,
       missionsCompleted: state.missionsCompleted || [],
+      currentMission: state.currentMission ?? 0,
       stats: state.stats || {},
       player: {
         x: state.playerX,

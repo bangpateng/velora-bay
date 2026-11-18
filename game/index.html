@@ -43,6 +43,26 @@
   button.ghost { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,.7); }
   #pause-screen { display: none; }
   #pause-screen h1 { font-size: 44px; }
+  #mission-list { list-style: none; padding: 0; margin: 12px 0 4px; text-align: left; font-size: 15px; line-height: 1.9; }
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+    z-index: 6; pointer-events: none; display: none; }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff;
+    box-shadow: 0 0 3px rgba(0,0,0,.9); }
+  #crosshair::before { left: 10px; top: 0; width: 2px; height: 22px; }
+  #crosshair::after { left: 0; top: 10px; width: 22px; height: 2px; }
+  #damage-vignette { position: fixed; inset: 0; z-index: 4; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(200,20,20,.55) 100%); }
+  #mission-card { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 7;
+    width: min(560px, 88vw); text-align: center; pointer-events: none; opacity: 0; transition: opacity .3s;
+    background: rgba(8,20,34,.88); border: 2px solid #ffd23f; border-radius: 8px; padding: 18px 24px; }
+  #mission-card.show { opacity: 1; }
+  #mission-card.fail { border-color: #ff5a4e; }
+  #mission-card.complete { border-color: #7be495; }
+  #mission-card-title { font-size: 22px; font-weight: 800; color: #ffd23f; letter-spacing: 1px; }
+  #mission-card.fail #mission-card-title { color: #ff5a4e; }
+  #mission-card.complete #mission-card-title { color: #7be495; }
+  #mission-card-body { font-size: 15px; line-height: 1.5; margin-top: 8px; color: #e8eef4; }
+  #mission-timer { font-size: 20px; font-weight: 800; color: #ff8a7a; margin-top: 4px; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
@@ -63,8 +83,12 @@
 </div>
 <div class="hud" id="hud-bottomleft">
   <div id="objective">Meet Mama Lou at the pier</div>
+  <div id="mission-timer"></div>
   <div id="hint">WASD — move · Shift — sprint · Space — jump · E — enter car</div>
 </div>
+<div id="damage-vignette"></div>
+<div id="crosshair"></div>
+<div id="mission-card"><div id="mission-card-title"></div><div id="mission-card-body"></div></div>
 <div class="hud" id="hud-bottomright">
   <div id="speed">ON FOOT</div>
   <div id="ammo">24</div>
@@ -78,8 +102,9 @@
     enemies. The Kings run the streets now. Mama Lou is waiting at the pier
     with one last job. Steal a car. Lose the cops. Take the city back.</p>
     <div class="controls">
-      <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> look &nbsp;·&nbsp; <b>Shift</b> sprint<br>
-      <b>Space</b> jump / handbrake &nbsp;·&nbsp; <b>E</b> steal / exit car &nbsp;·&nbsp; <b>H</b> horn &nbsp;·&nbsp; <b>Esc</b> pause
+      <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> look, <b>Click</b> shoot &nbsp;·&nbsp; <b>Shift</b> sprint<br>
+      <b>Space</b> jump / handbrake &nbsp;·&nbsp; <b>E</b> steal / exit car &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>R</b> reload<br>
+      <b>H</b> horn &nbsp;·&nbsp; <b>M</b> missions &nbsp;·&nbsp; <b>Esc</b> pause
     </div>
     <button id="btn-new">New Game</button>
     <button id="btn-continue" class="ghost" style="display:none">Continue</button>
@@ -90,6 +115,7 @@
   <div class="panel">
     <h1>PAUSED</h1>
     <p>Velora Bay waits for no one. Your progress is saved.</p>
+    <ul id="mission-list"></ul>
     <button id="btn-resume">Resume</button>
     <button id="btn-restart" class="ghost">Restart Day</button>
     <button id="btn-quit" class="ghost">Quit to Menu</button>
