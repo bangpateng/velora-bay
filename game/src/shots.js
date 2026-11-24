@@ -1,120 +1,94 @@
-// Screenshot staging ONLY — never part of real play. Reads
-// ?shot=<name>&seed=<n> and, after the world loads, puts the game in the
-// named scene so a screenshot shows the real game at its best:
-//   start  — the cover: title screen over the beachfront at sunset, gold
-//            car on the sand, palms, pier and turquoise ocean
-//   drive  — Rico driving the gold car south down Ocean Drive, the
-//            beachfront road, ocean on the right
-//   street — Rico on foot on the beachfront promenade, peds strolling,
-//            traffic passing, gold car parked on the sand
-//   chase  — Rico driving at wanted level 4: police cars chasing, the
-//            police helicopter overhead and a roadblock ahead
-import { createCar } from './vehicles.js';
+// Screenshot scenes: each one stages the real game — the same world,
+// the same systems, the same step function — from a fixed seed, then
+// drives it forward with a simple autopilot so the frame is a moment
+// of genuine play, not a posed diorama. ?shot=cover|street|mission|
+// night picks the scene; ?seed=N fixes the random draws.
+import { dist2 } from './util.js';
+import { makeCar, syncCarMesh, pursuitPoint } from './vehicles.js';
 
-export function readShotParams() {
-  const params = new URLSearchParams(window.location.search);
-  return { shot: params.get('shot') || '', seed: Number(params.get('seed') || 1) };
+const STEP = 1 / 30;
+
+/** Steer a car toward (tx, tz) along the road grid, never diagonally through blocks. */
+function driveToward(car, tx, tz) {
+  const pt = pursuitPoint(car.x, car.z, tx, tz);
+  const want = Math.atan2(pt.x - car.x, pt.z - car.z);
+  let diff = want - car.heading;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  // slow down for sharp turns so the car stays on the road, not in the blocks
+  const sharp = Math.abs(diff) > 0.9;
+  return { throttle: sharp ? 0.35 : 1, brake: 0, steer: Math.max(-1, Math.min(1, diff * 1.6)), boost: false, handbrake: false };
 }
 
+function walkToward(player, tx, tz) {
+  const want = Math.atan2(tx - player.x, tz - player.z);
+  let diff = want - player.heading;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return { forward: Math.abs(diff) < 1.2, back: false, left: diff < -0.3, right: diff > 0.3, sprint: false };
+}
+
+/**
+ * Stage the named scene on a live `game` (the main controller) and
+ * return how many fixed steps the autopilot should run before the
+ * screenshot is taken.
+ */
 export function stageShot(name, game) {
-  if (!name) return 'start';
-  if (name === 'start') {
-    stageCover(game);
-    return 'start';
-  }
-  game.startPlaying();
-  if (name === 'drive') {
-    stageDrive(game);
-    return 'drive';
-  }
+  const s = game.state;
+  const p = s.player;
+  s.flags.demo = true;
+  s.mode = 'playing';
+  game.hideMenus();
+  game.setCamera(0, 0.32, 16);
+
   if (name === 'street') {
-    stageStreet(game);
-    return 'street';
+    // On foot on the marina strip, pier and ferris wheel behind, traffic passing.
+    s.clockMinutes = 10 * 60 + 15;
+    p.x = -262; p.z = 40; p.heading = Math.PI * 0.5;
+    p.weapon = 'fists';
+    s.missions.start(4); // The Drop: walk the pier
+    s.missions.active.stepIndex = 0;
+    game.autopilot = (dt) => walkToward(p, -380, 60);
+    return 5 / STEP;
   }
-  if (name === 'chase') {
-    stageChase(game);
-    return 'chase';
+
+  if (name === 'mission') {
+    // Street Circuit start: player in a Vela GT on the z=120 avenue, rivals alongside, downtown towers.
+    s.clockMinutes = 15 * 60 + 40;
+    p.x = 0; p.z = 120; p.heading = Math.PI / 2;
+    const car = makeCar('sports', 0, 120, Math.PI / 2, 0xffd23e);
+    car.driver = 'player';
+    game.enterCar(car);
+    s.missions.start(5); // Street Circuit
+    game.autopilot = () => driveToward(car, 120, 120);
+    return 4 / STEP;
   }
-  return 'start';
-}
 
-function stageCover(game) {
-  // Sunset over the beachfront: warm the sun (the sky stays bright
-  // Miami blue) and hold the menu camera on a low cinematic frame down
-  // the beach to the pier.
-  game.state.menuFocus = 'beach';
-  game.sun.color.set(0xffd9a8);
-  game.sun.position.set(40, 55, 140);
-  // Gold car on the sand, close to the camera so it reads on the cover.
-  const car = createCar(game.scene, 'sport', 0xd4af37, -166, 60, Math.PI * 0.6);
-  car.parked = true;
-  game.parked.push(car);
-  // A few walkers on the promenade so the beach reads as lived-in.
-  game.peds.slice(0, 8).forEach((ped, i) => {
-    ped.pos.set(-168 + (i % 4) * 5, 0, 8 + Math.floor(i / 4) * 14);
-    ped.dest = { x: -168 + (i % 4) * 5, z: ped.pos.z + 30 };
-    ped.state = 'walk';
-  });
-}
+  if (name === 'night') {
+    // Harbor Lights at night: muscle car on the z=240 road by the marked crates, 1 star, lamps on.
+    s.clockMinutes = 21 * 60 + 30;
+    p.x = 60; p.z = 240; p.heading = Math.PI / 2;
+    const car = makeCar('muscle', 60, 240, Math.PI / 2, 0xc93d3d);
+    car.driver = 'player';
+    game.enterCar(car);
+    s.missions.start(8); // Harbor Lights
+    s.police.addWanted(p, 1, 'Suspicious vehicle', s);
+    game.autopilot = () => driveToward(car, 120, 240);
+    return 3 / STEP;
+  }
 
-function stageDrive(game) {
-  // Ocean Drive: the beachfront road (x = -116), heading south, ocean
-  // and palms on the right, city towers on the left.
-  const car = createCar(game.scene, 'sport', 0xd4af37, -116, -60, 0);
-  car.isPlayer = true;
-  game.parked.push(car);
+  // cover: golden-hour downtown chase, 3 stars, heli overhead, cruisers behind.
+  s.clockMinutes = 17 * 60 + 35;
+  p.x = 0; p.z = 60; p.heading = Math.PI;
+  const car = makeCar('sports', 0, 60, Math.PI, 0xffd23e);
+  car.driver = 'player';
   game.enterCar(car);
-  game.state.autoThrottle = true;
-  game.state.objective = 'Ocean Drive — cruise the beachfront';
-  game.state.money = 1250;
+  s.player.money = 12500;
+  s.missions.start(7); // Air Mail: 3-star escape to the marina (sets the heat itself)
+  for (let i = 0; i < 2; i++) s.police.spawnCopNear(p);
+  game.autopilot = () => driveToward(car, 0, -120);
+  return 5 / STEP;
 }
 
-function stageStreet(game) {
-  // Beachfront promenade: Rico on foot on the sand, facing north toward
-  // the pier, peds strolling past and traffic on the beachfront road.
-  game.player.pos.set(-160, 0, 44);
-  game.player.heading = Math.PI;
-  game.state.cameraYaw = 0;
-  game.state.money = 250;
-  game.state.objective = 'Beachfront Promenade — Velora Bay in the sun';
-  game.peds.slice(0, 10).forEach((ped, i) => {
-    ped.pos.set(-168 + (i % 5) * 4, 0, 28 + Math.floor(i / 5) * 6);
-    ped.dest = { x: -168 + (i % 5) * 4, z: ped.pos.z + 20 };
-    ped.state = 'walk';
-  });
-  game.traffic.slice(0, 4).forEach((car, i) => {
-    car.pos.x = -116;
-    car.pos.z = -30 + i * 26;
-    car.heading = 0;
-    car.routeIndex = 0;
-  });
-  // Gold car parked on the sand as a visual anchor.
-  const car = createCar(game.scene, 'sport', 0xd4af37, -156, 30, Math.PI * 0.6);
-  car.parked = true;
-  game.parked.push(car);
-}
-
-function stageChase(game) {
-  const car = createCar(game.scene, 'sport', 0xe0a030, 0, -116, 0);
-  car.isPlayer = true;
-  game.parked.push(car);
-  game.enterCar(car);
-  game.setWanted(4);
-  game.state.autoThrottle = true;
-  game.state.objective = 'The Getaway — survive 60s at wanted level 4';
-  game.state.money = 2450;
-  game.state.missionTimer = 47;
-  // Real police pursuit: two patrol cars behind, one cutting in ahead
-  // (visible in the chase camera); the heli and roadblocks spawn from
-  // the wanted level itself.
-  const p1 = game.policeSys.spawnPoliceCar(game.player.pos);
-  const p2 = game.policeSys.spawnPoliceCar(game.player.pos);
-  const p3 = game.policeSys.spawnPoliceCar(game.player.pos);
-  p1.pos.set(-3.4, 0, -130);
-  p2.pos.set(3.4, 0, -138);
-  p3.pos.set(4, 0, -85);
-  p1.speed = 26;
-  p2.speed = 24;
-  p3.speed = 18;
-  game.state.police = game.policeSys.cars;
-}
+/** Distance helper re-exported for main's demo checks. */
+export { dist2 };
